@@ -51,20 +51,50 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 		windowSize = fmt.Sprintf("%d,%d", opts.WindowWidth, opts.WindowHeight)
 	}
 
+	// 高速化・軽量化のための最適化起動引数
 	args := []string{
 		"--headless=new",
 		"--disable-gpu",
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
+		"--disable-extensions",
+		"--disable-background-networking",
+		"--disable-background-timer-throttling",
+		"--disable-backgrounding-occluded-windows",
+		"--disable-breakpad",
+		"--disable-component-extensions-with-background-pages",
+		"--disable-component-update",
+		"--disable-default-apps",
+		"--disable-domain-reliability",
+		"--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints",
+		"--disable-hang-monitor",
+		"--disable-ipc-flooding-protection",
+		"--disable-popup-blocking",
+		"--disable-prompt-on-repost",
+		"--disable-renderer-backgrounding",
+		"--disable-sync",
+		"--force-color-profile=srgb",
+		"--metrics-recording-only",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--mute-audio",
+		"--password-store=basic",
+		"--use-mock-keychain",
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		fmt.Sprintf("--user-data-dir=%s", userDataDir),
 		fmt.Sprintf("--window-size=%s", windowSize),
-		"about:blank",
+	}
+
+	// テキスト/JSON抽出のみの場合は画像読み込みを無効化して通信量・レンダリング時間を劇的に短縮
+	if opts.Format == FormatJSON || opts.Format == FormatText {
+		args = append(args, "--blink-settings=imagesEnabled=false")
 	}
 
 	if opts.ProfileDirectory != "" {
 		args = append(args, fmt.Sprintf("--profile-directory=%s", opts.ProfileDirectory))
 	}
+
+	args = append(args, "about:blank")
 
 	logger.Info("chrome.launch_headless", "port", port, "chrome_path", chromePath)
 
@@ -79,8 +109,8 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 		}
 	}()
 
-	// Chromeの起動・ポートリッスン完了を待機（最大10秒）
-	checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
+	// Chromeの起動・ポートリッスン完了を待機（最大5秒、高速ポーリング）
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
 	ready := false
 	for {
 		if checkCtx.Err() != nil {
@@ -90,7 +120,7 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 			ready = true
 			break
 		}
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	checkCancel()
 

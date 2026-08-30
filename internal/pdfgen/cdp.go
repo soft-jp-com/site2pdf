@@ -549,21 +549,34 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		return nil, fmt.Errorf("Page.navigate: %w", err)
 	}
 
+	format := opts.Format
+	if format == "" {
+		format = FormatPDF
+	}
+	needPDF := (format == FormatPDF || format == FormatAll)
+	needText := (format == FormatText || format == FormatAll)
+	needJSON := (format == FormatJSON || format == FormatAll)
+
 	// load完了待機
 	if err := cli.waitEvent(cctx, "Page.loadEventFired", sid); err != nil {
 		return nil, fmt.Errorf("ページ読み込み待機: %w", err)
 	}
-	if err := waitCtx(cctx, settleAfterLoad); err != nil {
-		return nil, err
-	}
 
-	// コンテンツ展開 (SPA・遅延読み込み対策)
-	_, _ = cli.send(cctx, "Emulation.setEmulatedMedia", map[string]any{"media": "screen"}, sid)
-	_, _ = cli.eval(cctx, sid, "window.scrollTo(0, document.body ? document.body.scrollHeight : 0)")
-	_ = waitCtx(cctx, 800*time.Millisecond)
-	_, _ = cli.eval(cctx, sid, unclipScrollContainersJS)
-	_ = waitCtx(cctx, 400*time.Millisecond)
-	_, _ = cli.eval(cctx, sid, "window.scrollTo(0, 0)")
+	if needPDF {
+		// PDF生成時はCSS展開・スクロール展開・安定化待機を行う
+		if err := waitCtx(cctx, settleAfterLoad); err != nil {
+			return nil, err
+		}
+		_, _ = cli.send(cctx, "Emulation.setEmulatedMedia", map[string]any{"media": "screen"}, sid)
+		_, _ = cli.eval(cctx, sid, "window.scrollTo(0, document.body ? document.body.scrollHeight : 0)")
+		_ = waitCtx(cctx, 600*time.Millisecond)
+		_, _ = cli.eval(cctx, sid, unclipScrollContainersJS)
+		_ = waitCtx(cctx, 300*time.Millisecond)
+		_, _ = cli.eval(cctx, sid, "window.scrollTo(0, 0)")
+	} else {
+		// テキスト/JSON抽出のみの場合は最小限の待機(150ms)で即座に抽出
+		_ = waitCtx(cctx, 150*time.Millisecond)
+	}
 
 	// 1. テキスト/メタデータ抽出
 	rawContent, err := cli.eval(cctx, sid, extractContentJS)
@@ -576,16 +589,6 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		return nil, fmt.Errorf("抽出コンテンツ解析失敗: %w", err)
 	}
 	content.FetchedAt = time.Now().UTC()
-
-	// 2. フォーマットに応じたファイル出力
-	format := opts.Format
-	if format == "" {
-		format = FormatPDF
-	}
-
-	needPDF := (format == FormatPDF || format == FormatAll)
-	needText := (format == FormatText || format == FormatAll)
-	needJSON := (format == FormatJSON || format == FormatAll)
 
 	if outputPath != "" {
 		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
