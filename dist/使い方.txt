@@ -1,0 +1,13 @@
+サイトの各ページをPDFにしてローカル保存するツールです。
+
+
+1. Chromeをすべて終了
+2. run_chrome.batでChromeを起動（リモートデバッグでChrome起動）
+3. Chromeから各サイトにログオン
+   - SecureNavi
+   - Docbase
+   - GoogleWS
+4. site2pdf.jsonにGoogleアカウントのメールアドレスを記載
+5. site2pdf.exeを実行
+
+

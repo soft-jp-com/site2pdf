@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(./dist/site2pdf.exe \"https://example.com\" \"test-example.pdf\" --log-file test.log)",
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(./dist/site2pdf.exe --log-file test.log \"https://example.com\" \"test-example.pdf\")",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --version)",
+      "Bash(python -c \"import json,os; d=json.load\\(open\\(os.path.expandvars\\(r'%LOCALAPPDATA%/Google/Chrome/User Data/Local State'\\),encoding='utf-8'\\)\\); oc=d.get\\('os_crypt',{}\\); print\\('has encrypted_key\\(v10/DPAPI\\):', 'encrypted_key' in oc\\); print\\('has app_bound_encrypted_key\\(v20/ABE\\):', 'app_bound_encrypted_key' in oc\\)\")",
+      "Bash(cp \"/c/Users/suzuki/AppData/Local/Google/Chrome/User Data/Profile 1/Network/Cookies\" /tmp/p1.db)",
+      "Bash(python -c ' *)",
+      "Bash(cp \"/c/Users/suzuki/AppData/Local/Google/Chrome/User Data/Profile 4/Network/Cookies\" \"/tmp/ck4.db\")",
+      "Read(//c/Users/suzuki/AppData/Local/Google/Chrome/User Data/Profile 4/Network//**)",
+      "Bash(cd *)",
+      "Bash(go vet *)",
+      "Bash(go test *)",
+      "Bash(./dist/site2pdf.exe \"https://example.com\" \"t.pdf\" --timeout 30)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(./dist/site2pdf.exe --profile-directory \"Default\" \"https://example.com\" \"t2.pdf\")",
+      "Bash(./dist/site2pdf.exe --use-active-session=false \"https://example.com\" \"t3.pdf\")",
+      "Bash(rm -f t.pdf t2.pdf t3.pdf test-example.pdf test.log)",
+      "Bash(ls *.pdf *.log)",
+      "Read(//c/Users/suzuki/AppData/Local/Google/Chrome/User Data/**)",
+      "Bash(./dist/site2pdf.exe \"https://example.com\" \"acct-test.pdf\")",
+      "Bash(./dist/site2pdf.exe --config __TRACKED_VAR__/none.json --remote-port 9333 --log-file __TRACKED_VAR__/cdp.log https://example.com __TRACKED_VAR__/cdp-out.pdf)",
+      "Bash(echo \"=== EXIT $? ===\")",
+      "Bash(./dist/site2pdf.exe --config __TRACKED_VAR__/none.json --remote-port 9333 https://example.com __TRACKED_VAR__/cdp-out.pdf)",
+      "Bash(where.exe site2pdf.exe)",
+      "Read(//c/work/ClaudeCode/claude-code/docs/セキュリティ関連/ISMAP/言明要件/**)",
+      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process -Filter \"name='\\\\''chrome.exe'\\\\''\" | Select-Object ProcessId,@{n='\\\\''HasDebug'\\\\'';e={$_.CommandLine -match '\\\\''remote-debugging-port'\\\\''}} | Format-Table -Auto; $c=\\(Get-CimInstance Win32_Process -Filter \"name='\\\\''chrome.exe'\\\\''\" | Measure-Object\\).Count; Write-Output \"chrome.exe count: $c\"')",
+      "Bash(powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 9222 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State\")",
+      "PowerShell(& \"C:/Users/suzuki/AppData/Local/Temp/claude/C--Users-suzuki-Dropbox-src-SOFT-JP-site2pdf/96ff0b2e-25eb-4de1-bfb8-25fea06ac6f5/scratchpad/diag.ps1\")",
+      "Bash(cp dist/site2pdf.exe \"C:/work/ClaudeCode/claude-code/docs/セキュリティ関連/ISMAP/言明要件/site2pdf.exe\")",
+      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process -Filter \"name='\\\\''chrome.exe'\\\\''\" | Where-Object { $_.CommandLine -match '\\\\''924[567]'\\\\'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }')",
+      "Bash(rm -rf __TRACKED_VAR__/hf-profile __TRACKED_VAR__/cdp-diag __TRACKED_VAR__/cdp.pdf __TRACKED_VAR__/cdp2.pdf __TRACKED_VAR__/headless.pdf __TRACKED_VAR__/none.json)"
+    ]
+  }
+}
