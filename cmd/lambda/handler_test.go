@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseRequest(t *testing.T) {
 	tests := []struct {
@@ -29,6 +32,18 @@ func TestParseRequest(t *testing.T) {
 				t.Errorf("Format = %q, want %q", req.Format, tt.wantFormat)
 			}
 		})
+	}
+}
+
+func TestEncodeResponseSizeLimit(t *testing.T) {
+	small := &response{URL: "https://example.com/", Format: "json"}
+	if _, err := encodeResponse(small); err != nil {
+		t.Fatalf("小さい応答でエラー: %v", err)
+	}
+
+	big := &response{URL: "https://example.com/", Format: "pdf", PDFBase64: strings.Repeat("A", maxResponseBytes)}
+	if _, err := encodeResponse(big); err == nil {
+		t.Fatal("上限を超える応答はエラーになるはず")
 	}
 }
 

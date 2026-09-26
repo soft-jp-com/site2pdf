@@ -33,8 +33,8 @@ RUN dnf install -y \
 
 COPY --from=chrome /opt/chrome /opt/chrome
 
-# 足りない共有ライブラリがあればビルドを失敗させる
-RUN ! ldd /opt/chrome/chrome-headless-shell | grep "not found"
+# 足りない共有ライブラリがあればビルドを失敗させる（ldd 自体が無い場合も失敗させるため、いったんファイルに書き出す）
+RUN ldd /opt/chrome/chrome-headless-shell > /tmp/ldd.txt && ! grep -q "not found" /tmp/ldd.txt && rm /tmp/ldd.txt
 
 COPY --from=build /out/bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
 

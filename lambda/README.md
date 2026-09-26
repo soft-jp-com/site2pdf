@@ -19,8 +19,8 @@ AWS へのデプロイ手順はまだ無い。ここでは手元の Docker と R
 ```
 
 - `format`: `json`（既定）/ `pdf` / `all`（`pdf` と `all` は JSON に加えて PDF を返す）
-- 応答: `content`（タイトル・本文など）, `pdf_base64`, `pdf_bytes`, `elapsed_ms`, `children_max_rss_mb`
-- PDF が 4MB を超えるとエラーを返す（同期呼び出しの応答上限 6MB に base64 で収めるため）。大きい PDF は S3 に置く形が今後の課題。
+- 応答: `content`（タイトル・本文など）, `pdf_base64`, `pdf_bytes`, `elapsed_ms`, `memory_peak_mb`（cgroup v2 の memory.peak が読める場合のみ）
+- 応答全体（PDF の base64 と本文の JSON を合わせたもの）が 6MB（同期呼び出しの上限）を超えるとエラーを返す。大きい PDF は S3 に置く形が今後の課題。
 
 ## 環境変数
 

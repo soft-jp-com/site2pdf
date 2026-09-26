@@ -68,18 +68,17 @@ func invokeOnce(client *http.Client, base string, cfg config, logger *slog.Logge
 	out, herr := handle(ctx, payload, cfg, logger.With("request_id", requestID))
 	// 失敗時も含め、Chrome の子孫プロセスをゾンビとして残さない
 	reapZombies()
+	var body []byte
+	if herr == nil {
+		body, herr = encodeResponse(out)
+	}
 	if herr != nil {
 		logger.Error("lambda.invocation_error", "request_id", requestID, "error", herr.Error())
-		body, _ := json.Marshal(map[string]string{
+		ebody, _ := json.Marshal(map[string]string{
 			"errorMessage": herr.Error(),
 			"errorType":    "Site2PDFError",
 		})
-		return post(client, base+requestID+"/error", body)
-	}
-
-	body, err := json.Marshal(out)
-	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
+		return post(client, base+requestID+"/error", ebody)
 	}
 	return post(client, base+requestID+"/response", body)
 }

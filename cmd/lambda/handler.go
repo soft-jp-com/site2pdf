@@ -16,9 +16,9 @@ import (
 	"site2pdf/internal/pdfgen"
 )
 
-// maxPDFBytes は同期呼び出しの応答（上限6MB）に base64 で収まるPDFの最大サイズ。
-// これを超えるPDFは将来 S3 に置いてURLを返す形にする。
-const maxPDFBytes = 4_000_000
+// maxResponseBytes は同期呼び出しの応答サイズ上限（6MB）。
+// PDF(base64)と本文を合わせた応答全体で判定する。超える場合は将来 S3 に置いてURLを返す形にする。
+const maxResponseBytes = 6 * 1024 * 1024
 
 // request は Lambda に渡すイベントの形式。
 type request struct {
@@ -29,13 +29,25 @@ type request struct {
 
 // response は Lambda が返す結果の形式。
 type response struct {
-	URL              string              `json:"url"`
-	Format           string              `json:"format"`
-	Content          *pdfgen.PageContent `json:"content"`
-	PDFBase64        string              `json:"pdf_base64,omitempty"`
-	PDFBytes         int                 `json:"pdf_bytes,omitempty"`
-	ElapsedMs        int64               `json:"elapsed_ms"`
-	ChildrenMaxRSSMB float64             `json:"children_max_rss_mb,omitempty"`
+	URL          string              `json:"url"`
+	Format       string              `json:"format"`
+	Content      *pdfgen.PageContent `json:"content"`
+	PDFBase64    string              `json:"pdf_base64,omitempty"`
+	PDFBytes     int                 `json:"pdf_bytes,omitempty"`
+	ElapsedMs    int64               `json:"elapsed_ms"`
+	MemoryPeakMB float64             `json:"memory_peak_mb,omitempty"` // 実行環境全体の最大メモリ（cgroup v2 で読める場合のみ）
+}
+
+// encodeResponse は応答をJSONにし、同期呼び出しの上限を超えていないか確かめる。
+func encodeResponse(res *response) ([]byte, error) {
+	body, err := json.Marshal(res)
+	if err != nil {
+		return nil, fmt.Errorf("応答のJSON化: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("応答が大きすぎて同期応答に収まりません(%d bytes > %d, pdf %d bytes)", len(body), maxResponseBytes, res.PDFBytes)
+	}
+	return body, nil
 }
 
 // config は環境変数から読み込む実行時設定。
@@ -125,18 +137,19 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 		if err != nil {
 			return nil, fmt.Errorf("PDF読み込み: %w", err)
 		}
-		if len(raw) > maxPDFBytes {
-			return nil, fmt.Errorf("PDFが大きすぎて同期応答に収まりません(%d bytes > %d)", len(raw), maxPDFBytes)
+		// base64 にした時点で上限を超えるものは、エンコードせずに早めに断る（最終判定は encodeResponse）
+		if base64.StdEncoding.EncodedLen(len(raw)) > maxResponseBytes {
+			return nil, fmt.Errorf("PDFが大きすぎて同期応答に収まりません(%d bytes)", len(raw))
 		}
 		res.PDFBytes = len(raw)
 		res.PDFBase64 = base64.StdEncoding.EncodeToString(raw)
 	}
 
 	res.ElapsedMs = time.Since(start).Milliseconds()
-	reapZombies() // レンダラー等を回収してからメモリ使用量を読む
-	res.ChildrenMaxRSSMB = childrenMaxRSSMB()
+	reapZombies()
+	res.MemoryPeakMB = memoryPeakMB()
 	logger.Info("lambda.done", "url", req.URL, "format", req.Format, "elapsed_ms", res.ElapsedMs,
-		"pdf_bytes", res.PDFBytes, "children_max_rss_mb", res.ChildrenMaxRSSMB)
+		"pdf_bytes", res.PDFBytes, "memory_peak_mb", res.MemoryPeakMB)
 	return res, nil
 }
 
