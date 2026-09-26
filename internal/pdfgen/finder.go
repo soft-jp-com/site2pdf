@@ -24,9 +24,19 @@ func knownChromePaths() []string {
 	return paths
 }
 
+// ChromePathEnv はChrome実行ファイルパスを指定する環境変数名。
+const ChromePathEnv = "SITE2PDF_CHROME_PATH"
+
 // FindChrome は利用可能なChrome/Edgeの実行ファイルパスを返す。
+// 環境変数 SITE2PDF_CHROME_PATH が設定されていればそれを優先する。
 // 見つからない場合は --chrome フラグで指定するよう促すエラーを返す。
 func FindChrome() (string, error) {
+	if p := os.Getenv(ChromePathEnv); p != "" {
+		if _, err := os.Stat(p); err != nil {
+			return "", fmt.Errorf("%s のChromeが見つかりません(%s): %w", ChromePathEnv, p, err)
+		}
+		return p, nil
+	}
 	for _, path := range knownChromePaths() {
 		if path == "" {
 			continue
@@ -35,5 +45,5 @@ func FindChrome() (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("Chrome/Edge が見つかりません。--chrome フラグで実行ファイルパスを指定してください")
+	return "", fmt.Errorf("Chrome/Edge が見つかりません。--chrome フラグか環境変数 %s で実行ファイルパスを指定してください", ChromePathEnv)
 }

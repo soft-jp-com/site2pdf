@@ -44,6 +44,13 @@ type GenerateOptions struct {
 	ProfileDirectory string
 	// Format は出力フォーマット (pdf, text, json, all)
 	Format OutputFormat
+	// WorkDir は一時ユーザーデータディレクトリを作る親ディレクトリ
+	// (空白=環境変数 SITE2PDF_WORK_DIR、それも空ならOS既定の一時ディレクトリ)
+	WorkDir string
+	// StartupTimeoutSec はヘッドレスChromeのデバッグポート待機秒数 (0=5秒)
+	StartupTimeoutSec int
+	// ExtraArgs はChrome起動時に追加する引数 (例: Lambda向けの --no-zygote)
+	ExtraArgs []string
 }
 
 // DefaultGenerateOptions はデフォルト設定を返す。

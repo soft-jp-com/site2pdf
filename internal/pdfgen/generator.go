@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+// WorkDirEnv は一時ディレクトリの親ディレクトリを指定する環境変数名。
+// Lambda では書き込み可能な /tmp を指定する。
+const WorkDirEnv = "SITE2PDF_WORK_DIR"
+
 // ProcessPageHeadless はバックグラウンドでChromeヘッドレスプロセスを起動し、
 // CDP経由でページ処理（PDF生成・テキスト抽出・JSON抽出）を実行する。
 func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts GenerateOptions, logger *slog.Logger) (*PageContent, error) {
@@ -32,7 +36,11 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 	userDataDir := opts.UserDataDir
 	var tempDir string
 	if userDataDir == "" {
-		tempDir, err = os.MkdirTemp("", "site2pdf-headless-*")
+		workDir := opts.WorkDir
+		if workDir == "" {
+			workDir = os.Getenv(WorkDirEnv)
+		}
+		tempDir, err = os.MkdirTemp(workDir, "site2pdf-headless-*")
 		if err != nil {
 			return nil, fmt.Errorf("create temp user data dir: %w", err)
 		}
@@ -94,23 +102,30 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 		args = append(args, fmt.Sprintf("--profile-directory=%s", opts.ProfileDirectory))
 	}
 
+	args = append(args, opts.ExtraArgs...)
 	args = append(args, "about:blank")
 
 	logger.Info("chrome.launch_headless", "port", port, "chrome_path", chromePath)
 
 	cmd := exec.CommandContext(ctx, chromePath, args...)
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start chrome: %w", err)
 	}
 	defer func() {
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			// レンダラー等の子プロセスも残さないよう、プロセスグループごと終了する
+			killProcessTree(cmd)
 			_ = cmd.Wait()
 		}
 	}()
 
-	// Chromeの起動・ポートリッスン完了を待機（最大5秒、高速ポーリング）
-	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	// Chromeの起動・ポートリッスン完了を待機（既定5秒、高速ポーリング）
+	startupTimeout := 5 * time.Second
+	if opts.StartupTimeoutSec > 0 {
+		startupTimeout = time.Duration(opts.StartupTimeoutSec) * time.Second
+	}
+	checkCtx, checkCancel := context.WithTimeout(ctx, startupTimeout)
 	ready := false
 	for {
 		if checkCtx.Err() != nil {
