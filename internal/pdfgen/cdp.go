@@ -549,12 +549,8 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	if err != nil {
 		return nil, fmt.Errorf("Page.navigate: %w", err)
 	}
-	// DNS失敗・接続拒否などは errorText で返り、そのままだと chrome-error ページを抽出してしまう
-	var nav struct {
-		ErrorText string `json:"errorText"`
-	}
-	if err := json.Unmarshal(navRes, &nav); err == nil && nav.ErrorText != "" {
-		return nil, fmt.Errorf("ページを開けません(%s): %s", pageURL, nav.ErrorText)
+	if err := navigationError(navRes, pageURL); err != nil {
+		return nil, err
 	}
 
 	format := opts.Format
@@ -598,7 +594,7 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	}
 	content.FetchedAt = time.Now().UTC()
 	// 読み込み途中で失敗した場合もエラーページになるので、成功として返さない
-	if strings.HasPrefix(content.FinalURL, "chrome-error://") {
+	if isChromeErrorPage(content.FinalURL) {
 		return nil, fmt.Errorf("ページを開けません(%s): エラーページが表示されました", pageURL)
 	}
 
@@ -686,7 +682,24 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	return &content, nil
 }
 
-// GeneratePDFViaCDP は後方互換性のためのラッパー関数。
+// navigationError は Page.navigate の結果に errorText（DNS失敗・接続拒否など）があればエラーを返す。
+// これを見ないと chrome-error ページを正常なページとして抽出してしまう。
+func navigationError(navRes json.RawMessage, pageURL string) error {
+	var nav struct {
+		ErrorText string `json:"errorText"`
+	}
+	if err := json.Unmarshal(navRes, &nav); err == nil && nav.ErrorText != "" {
+		return fmt.Errorf("ページを開けません(%s): %s", pageURL, nav.ErrorText)
+	}
+	return nil
+}
+
+// isChromeErrorPage は最終URLがChromeのエラーページかどうかを返す。
+func isChromeErrorPage(finalURL string) bool {
+	return strings.HasPrefix(finalURL, "chrome-error://")
+}
+
+// GeneratePDFViaCDPは後方互換性のためのラッパー関数。
 func GeneratePDFViaCDP(ctx context.Context, port int, pageURL, outputPath string, opts GenerateOptions, logger *slog.Logger) error {
 	opts.Format = FormatPDF
 	_, err := ProcessPageViaCDP(ctx, port, pageURL, outputPath, opts, logger)
