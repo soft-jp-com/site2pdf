@@ -545,8 +545,16 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	if _, err := cli.send(cctx, "Runtime.enable", nil, sid); err != nil {
 		return nil, fmt.Errorf("Runtime.enable: %w", err)
 	}
-	if _, err := cli.send(cctx, "Page.navigate", map[string]any{"url": pageURL}, sid); err != nil {
+	navRes, err := cli.send(cctx, "Page.navigate", map[string]any{"url": pageURL}, sid)
+	if err != nil {
 		return nil, fmt.Errorf("Page.navigate: %w", err)
+	}
+	// DNS失敗・接続拒否などは errorText で返り、そのままだと chrome-error ページを抽出してしまう
+	var nav struct {
+		ErrorText string `json:"errorText"`
+	}
+	if err := json.Unmarshal(navRes, &nav); err == nil && nav.ErrorText != "" {
+		return nil, fmt.Errorf("ページを開けません(%s): %s", pageURL, nav.ErrorText)
 	}
 
 	format := opts.Format
@@ -589,6 +597,10 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		return nil, fmt.Errorf("抽出コンテンツ解析失敗: %w", err)
 	}
 	content.FetchedAt = time.Now().UTC()
+	// 読み込み途中で失敗した場合もエラーページになるので、成功として返さない
+	if strings.HasPrefix(content.FinalURL, "chrome-error://") {
+		return nil, fmt.Errorf("ページを開けません(%s): エラーページが表示されました", pageURL)
+	}
 
 	if outputPath != "" {
 		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
