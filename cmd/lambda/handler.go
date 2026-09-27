@@ -214,6 +214,7 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 	}
 
 	if shots := content.Screenshots; shots != nil {
+		logger.Info("lambda.fixed_elements", "url", req.URL, "elements", shots.FixedElements)
 		res.PageHeight = shots.PageHeight
 		res.ScreenshotsTruncated = shots.Truncated
 		for _, t := range shots.Tiles {

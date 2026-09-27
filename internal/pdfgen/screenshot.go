@@ -35,6 +35,8 @@ type Screenshots struct {
 	Tiles      []ScreenshotTile
 	PageHeight int  // ページ全体の高さ(px)
 	Truncated  bool // MaxTiles を超えたため下の方を撮っていない
+	// FixedElements は撮影前に手を入れた固定表示の要素の概要（ログ用）
+	FixedElements []string
 }
 
 // tileLayout はページの高さから、撮る範囲(y, 高さ)の一覧と、切り捨てたかどうかを返す。
@@ -72,22 +74,39 @@ func setScreenshotViewport(ctx context.Context, cli *cdpClient, sid string, so S
 	return err
 }
 
-// hideFixedElementsJS は画面に固定された要素（通知のお誘い・Cookie同意・追従ヘッダー等）を撮影前に隠すJS。
-// 分割撮影では position: fixed の要素が各タイルの同じ位置に描かれて本文を覆うため非表示にする
-// （ただし本文を丸ごと包んでいる大きな要素は残す）。
+// hideFixedElementsJS は画面に固定された要素（通知のお誘い・Cookie同意・追従ヘッダー等）を撮影前に片付けるJS。
+// 分割撮影では position: fixed の要素が各タイルの同じ位置に描かれて本文を覆うため、
+//   - 画面の上端に張り付いた横長のもの（サイトのヘッダー）は absolute にして、ページ先頭に1回だけ写す
+//     （AI がどのサイトかを読み取る手がかりになる）
+//   - それ以外は非表示にする（ただし本文を丸ごと包んでいる大きな要素は残す）
+//
+// 手を入れた要素の概要（"動作 タグ#id.class 位置"）の配列を返す。ログで確かめるため。
+//
 // position: sticky はスクロール位置0のまま撮るので本来の位置に1回だけ描かれる。static に変えると
 // 周りのレイアウトが崩れるサイトがあった（朝日新聞の右列が重なった）ため触らない。
 // 隠した要素の数を返す。
 const hideFixedElementsJS = `(function(){
-  var n = 0;
+  var n = [];
   var els = document.body ? document.body.querySelectorAll('*') : [];
   for (var i = 0; i < els.length; i++) {
     var el = els[i];
     var pos = getComputedStyle(el).position;
     if (pos === 'fixed') {
-      if ((el.innerText || '').length > 2000) continue;
-      el.style.setProperty('display', 'none', 'important');
-      n++;
+      var r = el.getBoundingClientRect();
+      var desc = el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+        (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '') +
+        ' top=' + Math.round(r.top) + ' h=' + Math.round(r.height) + ' w=' + Math.round(r.width);
+      if ((el.innerText || '').length > 2000) { n.push('keep ' + desc); continue; }
+      if (r.top <= 1 && r.height > 0 && r.height <= 300 && r.width >= window.innerWidth * 0.6) {
+        // スクロールで隠れるヘッダーは top がマイナスになっている（transform で上に逃がす）ので先頭に戻す
+        el.style.setProperty('position', 'absolute', 'important');
+        el.style.setProperty('top', '0px', 'important');
+        el.style.setProperty('transform', 'none', 'important');
+        n.push('header ' + desc);
+      } else {
+        el.style.setProperty('display', 'none', 'important');
+        n.push('hide ' + desc);
+      }
     }
   }
   return n;
@@ -95,7 +114,10 @@ const hideFixedElementsJS = `(function(){
 
 // captureScreenshots はページ全体を縦に分割してJPEGで撮る。
 func captureScreenshots(ctx context.Context, cli *cdpClient, sid string, so ScreenshotOptions) (*Screenshots, error) {
-	_, _ = cli.eval(ctx, sid, hideFixedElementsJS)
+	var fixed []string
+	if raw, err := cli.eval(ctx, sid, hideFixedElementsJS); err == nil {
+		_ = json.Unmarshal(raw, &fixed)
+	}
 	_ = waitCtx(ctx, 100*time.Millisecond)
 
 	res, err := cli.send(ctx, "Page.getLayoutMetrics", nil, sid)
@@ -113,7 +135,7 @@ func captureScreenshots(ctx context.Context, cli *cdpClient, sid string, so Scre
 	pageHeight := int(math.Ceil(lm.CSSContentSize.Height))
 
 	layout, truncated := tileLayout(pageHeight, so.TileHeight, so.MaxTiles)
-	shots := &Screenshots{PageHeight: pageHeight, Truncated: truncated}
+	shots := &Screenshots{PageHeight: pageHeight, Truncated: truncated, FixedElements: fixed}
 	for _, t := range layout {
 		res, err := cli.send(ctx, "Page.captureScreenshot", map[string]any{
 			"format":  "jpeg",

@@ -623,8 +623,6 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		_, _ = cli.send(cctx, "Emulation.setEmulatedMedia", map[string]any{"media": "screen"}, sid)
 		_, _ = cli.eval(cctx, sid, "window.scrollTo(0, document.body ? document.body.scrollHeight : 0)")
 		_ = waitCtx(cctx, 600*time.Millisecond)
-		_, _ = cli.eval(cctx, sid, unclipScrollContainersJS)
-		_ = waitCtx(cctx, 300*time.Millisecond)
 		_, _ = cli.eval(cctx, sid, "window.scrollTo(0, 0)")
 	} else {
 		// テキスト/JSON抽出のみの場合は最小限の待機(150ms)で即座に抽出
@@ -663,6 +661,12 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 
 	// PDF 生成
 	if needPDF && outputPath != "" {
+		// スクロール領域の高さ制限を外して全コンテンツを印刷する。
+		// 親の高さが固定されたサイトでは中身がはみ出して重なる（朝日新聞の右列など）ため、
+		// スクリーンショットには使わず、撮り終えた後・印刷の直前にだけ行う。
+		_, _ = cli.eval(cctx, sid, unclipScrollContainersJS)
+		_ = waitCtx(cctx, 300*time.Millisecond)
+
 		pdfPath := outputPath
 		if format == FormatAll {
 			pdfPath = replaceOrAppendExt(outputPath, ".pdf")
