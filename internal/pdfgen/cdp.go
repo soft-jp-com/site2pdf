@@ -339,8 +339,9 @@ func newCDPClient(wsURL string) (*cdpClient, error) {
 	c := &cdpClient{
 		ws:      ws,
 		pending: make(map[int]chan cdpMessage),
-		events:  make(chan cdpMessage, 100),
-		closed:  make(chan struct{}),
+		// Network ドメインを有効にするとイベントが大量に届くため、読み込み完了イベントが溢れて落ちないよう大きめに取る
+		events: make(chan cdpMessage, 2000),
+		closed: make(chan struct{}),
 	}
 	go c.readLoop()
 	return c, nil
@@ -545,6 +546,12 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	if _, err := cli.send(cctx, "Runtime.enable", nil, sid); err != nil {
 		return nil, fmt.Errorf("Runtime.enable: %w", err)
 	}
+	if opts.BlockAds {
+		// 失敗しても本来の処理は続ける（広告が残るだけ）
+		if err := enableAdBlock(cctx, cli, sid); err != nil {
+			logger.Warn("cdp.adblock_failed", "url", pageURL, "error", err.Error())
+		}
+	}
 	navRes, err := cli.send(cctx, "Page.navigate", map[string]any{"url": pageURL}, sid)
 	if err != nil {
 		return nil, fmt.Errorf("Page.navigate: %w", err)
@@ -564,6 +571,11 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	// load完了待機
 	if err := cli.waitEvent(cctx, "Page.loadEventFired", sid); err != nil {
 		return nil, fmt.Errorf("ページ読み込み待機: %w", err)
+	}
+
+	if opts.BlockAds {
+		// 通信を止めても残る広告枠（空の枠や自社配信の広告）を隠す
+		_, _ = cli.eval(cctx, sid, hideAdSlotsJS())
 	}
 
 	if needPDF {

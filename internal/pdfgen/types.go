@@ -51,6 +51,8 @@ type GenerateOptions struct {
 	StartupTimeoutSec int
 	// ExtraArgs はChrome起動時に追加する引数 (例: Lambda向けの --no-zygote)
 	ExtraArgs []string
+	// BlockAds は広告ドメインへの通信を止め、残った広告枠をCSSで隠すか
+	BlockAds bool
 }
 
 // DefaultGenerateOptions はデフォルト設定を返す。
@@ -61,5 +63,6 @@ func DefaultGenerateOptions() GenerateOptions {
 		WindowWidth:     1920,
 		WindowHeight:    1080,
 		Format:          FormatPDF,
+		BlockAds:        true,
 	}
 }

@@ -25,6 +25,7 @@ type request struct {
 	URL        string `json:"url"`
 	Format     string `json:"format"`      // json（既定）, pdf, all
 	TimeoutSec int    `json:"timeout_sec"` // ページ読み込みタイムアウト（0=環境変数の既定値）
+	BlockAds   *bool  `json:"block_ads"`   // 広告を除くか（省略時=true）
 }
 
 // response は Lambda が返す結果の形式。
@@ -115,6 +116,9 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 	opts.TimeoutSec = cfg.PageTimeoutSec
 	if req.TimeoutSec > 0 {
 		opts.TimeoutSec = req.TimeoutSec
+	}
+	if req.BlockAds != nil {
+		opts.BlockAds = *req.BlockAds
 	}
 
 	// all の場合は拡張子が付け替えられるので、PDFのパスは out.pdf になる

@@ -111,6 +111,7 @@ func run() error {
 	flagChrome := flag.String("chrome", "", "Chrome実行ファイルのパス (省略時=自動検出)")
 	flagTimeoutSec := flag.Int("timeout", 60, "ページ読み込みタイムアウト(秒)")
 	flagPrintBg := flag.Bool("print-background", true, "背景色・背景画像を印刷するか")
+	flagBlockAds := flag.Bool("block-ads", true, "広告ドメインへの通信を止め、広告枠を隠す (-block-ads=false で無効)")
 	flagLogFile := flag.String("log-file", "", "構造化ログの出力先ファイルパス (省略時=stderr)")
 	flagUserDataDir := flag.String("user-data-dir", "", "Chromeのユーザーデータディレクトリのパス")
 	flagProfileDir := flag.String("profile-directory", "", "使用するプロファイルディレクトリ名 (例: Default, Profile 1)")
@@ -237,6 +238,7 @@ func run() error {
 		UserDataDir:      userDataDir,
 		ProfileDirectory: resolvedProfileDir,
 		Format:           selectedFormat,
+		BlockAds:         *flagBlockAds,
 	}
 
 	// ページ処理の共通実行関数
