@@ -339,9 +339,8 @@ func newCDPClient(wsURL string) (*cdpClient, error) {
 	c := &cdpClient{
 		ws:      ws,
 		pending: make(map[int]chan cdpMessage),
-		// Network ドメインを有効にするとイベントが大量に届くため、読み込み完了イベントが溢れて落ちないよう大きめに取る
-		events: make(chan cdpMessage, 2000),
-		closed: make(chan struct{}),
+		events:  make(chan cdpMessage, 256),
+		closed:  make(chan struct{}),
 	}
 	go c.readLoop()
 	return c, nil
@@ -369,13 +368,30 @@ func (c *cdpClient) readLoop() {
 			}
 			continue
 		}
-		if msg.Method != "" {
+		if msg.Method != "" && keepEvent(msg) {
 			select {
 			case c.events <- msg:
 			default:
 			}
 		}
 	}
+}
+
+// keepEvent はイベントをキューに入れるかを返す。
+// キューが満杯だとイベントは捨てられるため、Network ドメインを有効にしたときに
+// リクエストごとに大量に届くイベントで Page.loadEventFired が押し出されないよう、使わないものは入れない。
+// Network.responseReceived はメインのドキュメント（HTTPステータスの取得に使う予定）だけ通す。
+func keepEvent(msg cdpMessage) bool {
+	if !strings.HasPrefix(msg.Method, "Network.") {
+		return true
+	}
+	if msg.Method != "Network.responseReceived" {
+		return false
+	}
+	var p struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(msg.Params, &p) == nil && p.Type == "Document"
 }
 
 func (c *cdpClient) send(ctx context.Context, method string, params map[string]any, sessionID string) (json.RawMessage, error) {
