@@ -45,3 +45,20 @@ func TestPrefetchFiles(t *testing.T) {
 		t.Errorf("files=%d", r.Files)
 	}
 }
+
+func TestReadRangeSplitsLargeFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "big")
+	size := int64(prefetchChunkSize*2 + 123)
+	if err := os.WriteFile(p, make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list := filepath.Join(dir, "list")
+	if err := os.WriteFile(list, []byte(p+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := prefetchFiles(list, 10*time.Second, 3)
+	if r.Files != 1 || r.Bytes != size {
+		t.Errorf("files=%d bytes=%d, want 1 / %d", r.Files, r.Bytes, size)
+	}
+}

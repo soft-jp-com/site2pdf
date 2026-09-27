@@ -39,7 +39,7 @@ func main() {
 	// 初期化フェーズのうちに Chrome と共有ライブラリを読み込んでおき、コールドスタートを短くする
 	if list := os.Getenv("SITE2PDF_PREFETCH_LIST"); list != "" {
 		budget := time.Duration(envInt("SITE2PDF_PREFETCH_BUDGET_MS", 8000)) * time.Millisecond
-		r := prefetchFiles(list, budget, 8)
+		r := prefetchFiles(list, budget, 16)
 		logger.Info("lambda.prefetch", "files", r.Files, "mb", r.Bytes/(1024*1024),
 			"elapsed_ms", r.Elapsed.Milliseconds(), "timed_out", r.TimedOut)
 	}
