@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 )
 
 // ScreenshotOptions はスクリーンショット（縦に分割したJPEG）の設定。
@@ -55,7 +56,13 @@ func tileLayout(pageHeight, tileHeight, maxTiles int) (tiles [][2]int, truncated
 }
 
 // setScreenshotViewport はスクリーンショット用に表示幅を固定する。ページ遷移の前に呼ぶ。
+// あわせて通知の許可を「拒否」にしておき、「通知を受け取りますか」系のお誘いを出さないサイトを増やす。
 func setScreenshotViewport(ctx context.Context, cli *cdpClient, sid string, so ScreenshotOptions) error {
+	// ブラウザ単位の設定なのでセッションIDなしで送る。失敗しても撮影自体はできるので無視する
+	_, _ = cli.send(ctx, "Browser.setPermission", map[string]any{
+		"permission": map[string]any{"name": "notifications"},
+		"setting":    "denied",
+	}, "")
 	_, err := cli.send(ctx, "Emulation.setDeviceMetricsOverride", map[string]any{
 		"width":             so.Width,
 		"height":            so.TileHeight,
@@ -65,8 +72,35 @@ func setScreenshotViewport(ctx context.Context, cli *cdpClient, sid string, so S
 	return err
 }
 
+// hideFixedElementsJS は画面に固定された要素（通知のお誘い・Cookie同意・追従ヘッダー等）を撮影前に片付けるJS。
+// 分割撮影では fixed 要素が各タイルの同じ位置に描かれて本文を覆うため、
+//   - position: fixed は非表示にする（ただし本文を丸ごと包んでいる大きな要素は残す）
+//   - position: sticky は static に戻す（本来の位置に一度だけ表示される）
+//
+// 片付けた要素の数を返す。
+const hideFixedElementsJS = `(function(){
+  var n = 0;
+  var els = document.body ? document.body.querySelectorAll('*') : [];
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    var pos = getComputedStyle(el).position;
+    if (pos === 'fixed') {
+      if ((el.innerText || '').length > 2000) continue;
+      el.style.setProperty('display', 'none', 'important');
+      n++;
+    } else if (pos === 'sticky') {
+      el.style.setProperty('position', 'static', 'important');
+      n++;
+    }
+  }
+  return n;
+})()`
+
 // captureScreenshots はページ全体を縦に分割してJPEGで撮る。
 func captureScreenshots(ctx context.Context, cli *cdpClient, sid string, so ScreenshotOptions) (*Screenshots, error) {
+	_, _ = cli.eval(ctx, sid, hideFixedElementsJS)
+	_ = waitCtx(ctx, 100*time.Millisecond)
+
 	res, err := cli.send(ctx, "Page.getLayoutMetrics", nil, sid)
 	if err != nil {
 		return nil, fmt.Errorf("Page.getLayoutMetrics: %w", err)
