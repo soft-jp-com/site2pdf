@@ -39,6 +39,12 @@ type prefetchChunk struct {
 // /next を呼ぶと実行環境が止められるので、バックグラウンドではなくここで読み終える。
 // 初期化フェーズは10秒までなので budget で打ち切る。一覧の上にあるものから順に読む。
 func prefetchFiles(listFile string, budget time.Duration, workers int) prefetchResult {
+	return prefetchFilesWith(listFile, budget, workers, readRange)
+}
+
+// prefetchFilesWith は範囲を読む関数を指定して先読みする（テストで読み込みが止まる状況を作るため）。
+func prefetchFilesWith(listFile string, budget time.Duration, workers int,
+	read func(c prefetchChunk, buf []byte, deadline time.Time) (int64, bool)) prefetchResult {
 	start := time.Now()
 	deadline := start.Add(budget)
 
@@ -81,7 +87,7 @@ func prefetchFiles(listFile string, budget time.Duration, workers int) prefetchR
 					timedOut.Store(true)
 					continue // 残りは捨てて channel を空にする
 				}
-				n, ok := readRange(c, buf, deadline)
+				n, ok := read(c, buf, deadline)
 				atomic.AddInt64(&nBytes, n)
 				if !ok {
 					timedOut.Store(true)
@@ -89,8 +95,22 @@ func prefetchFiles(listFile string, budget time.Duration, workers int) prefetchR
 			}
 		}()
 	}
-	wg.Wait()
-	return prefetchResult{Files: int(atomic.LoadInt64(&nFiles)), Bytes: nBytes, Elapsed: time.Since(start), TimedOut: timedOut.Load()}
+	// 読み込み中の ReadAt は、イメージの取得待ちで締め切りを過ぎても戻らないことがある。
+	// 全部の終了を待つと初期化フェーズが延びるため、締め切りが来たら待たずに戻る。
+	// 残った goroutine は /next で実行環境ごと止められ、再開後に締め切り判定に当たって抜けるだけで害はない。
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		timedOut.Store(true)
+	}
+	return prefetchResult{Files: int(atomic.LoadInt64(&nFiles)), Bytes: atomic.LoadInt64(&nBytes), Elapsed: time.Since(start), TimedOut: timedOut.Load()}
 }
 
 // readRange はファイルの指定範囲を読み捨てる。途中で締め切りを過ぎたら ok=false。

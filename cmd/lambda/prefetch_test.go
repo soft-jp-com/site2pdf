@@ -62,3 +62,33 @@ func TestReadRangeSplitsLargeFile(t *testing.T) {
 		t.Errorf("files=%d bytes=%d, want 1 / %d", r.Files, r.Bytes, size)
 	}
 }
+
+func TestPrefetchReturnsAtDeadlineWhenReadStalls(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "chrome")
+	if err := os.WriteFile(p, make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list := filepath.Join(dir, "list")
+	if err := os.WriteFile(list, []byte(p+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// イメージの取得待ちで ReadAt が戻らない状況を再現する
+	release := make(chan struct{})
+	defer close(release)
+	stall := func(c prefetchChunk, buf []byte, deadline time.Time) (int64, bool) {
+		<-release
+		return 0, true
+	}
+
+	start := time.Now()
+	r := prefetchFilesWith(list, 200*time.Millisecond, 2, stall)
+	elapsed := time.Since(start)
+	if elapsed > time.Second {
+		t.Errorf("締め切り(200ms)を過ぎても戻らなかった: %v", elapsed)
+	}
+	if !r.TimedOut {
+		t.Error("打ち切りとして報告されるはず")
+	}
+}
