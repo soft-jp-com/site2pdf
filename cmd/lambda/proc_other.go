@@ -10,3 +10,6 @@ func reapZombies() int { return 0 }
 
 // memoryPeakMB は Linux 以外では計測しない。
 func memoryPeakMB() float64 { return 0 }
+
+// procStats は Linux 以外では数えない。
+func procStats() (chromeAlive, zombies int) { return 0, 0 }

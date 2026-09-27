@@ -29,7 +29,12 @@ RUN dnf install -y \
         libXcomposite libXdamage libXfixes libXrandr libXext libX11 libxcb \
         mesa-libgbm pango cairo alsa-lib expat dbus-libs \
         fontconfig google-noto-sans-cjk-fonts \
-    && dnf clean all
+    && dnf clean all \
+    && rm -f /usr/share/fonts/google-noto-cjk/NotoSerifCJK* \
+    && fc-cache -f
+# ↑ Serif は使わないので削除してイメージを軽くする。
+#   fc-cache でフォントキャッシュをイメージに焼き込む。これが無いと Lambda のコールドスタートごとに
+#   フォント全体を走査して /tmp にキャッシュを作るため、Chrome の起動に20秒以上かかっていた（実機で確認）。
 
 COPY --from=chrome /opt/chrome /opt/chrome
 

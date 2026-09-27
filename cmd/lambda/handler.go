@@ -92,6 +92,9 @@ func parseRequest(payload []byte) (request, error) {
 
 // handle は1件のイベントを処理する。
 func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger) (*response, error) {
+	chromeAlive, zombies := procStats()
+	logger.Info("lambda.proc_stats", "chrome_alive", chromeAlive, "zombies", zombies)
+
 	req, err := parseRequest(payload)
 	if err != nil {
 		return nil, err
