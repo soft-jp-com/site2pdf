@@ -26,6 +26,9 @@ import (
 	"time"
 )
 
+// defaultLoadWait は load イベントを待つ上限。超えたらその時点の状態で処理を続ける。
+const defaultLoadWait = 15 * time.Second
+
 // settleAfterLoad はload完了後、JS描画の安定化を待つ時間。
 const settleAfterLoad = 2 * time.Second
 
@@ -589,9 +592,22 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 	needText := (format == FormatText || format == FormatAll)
 	needJSON := (format == FormatJSON || format == FormatAll)
 
-	// load完了待機
-	if err := cli.waitEvent(cctx, "Page.loadEventFired", sid); err != nil {
-		return nil, fmt.Errorf("ページ読み込み待機: %w", err)
+	// load完了待機。広告などが読み込みを終えず load イベントが来ないページもあるため、
+	// 一定時間で打ち切ってその時点の状態で処理を続ける（LoadTimeout を立てる）
+	loadWait := defaultLoadWait
+	if opts.LoadWaitSec > 0 {
+		loadWait = time.Duration(opts.LoadWaitSec) * time.Second
+	}
+	loadTimedOut := false
+	lctx, lcancel := context.WithTimeout(cctx, loadWait)
+	err = cli.waitEvent(lctx, "Page.loadEventFired", sid)
+	lcancel()
+	if err != nil {
+		if cctx.Err() != nil || lctx.Err() != context.DeadlineExceeded {
+			return nil, fmt.Errorf("ページ読み込み待機: %w", err)
+		}
+		loadTimedOut = true
+		logger.Warn("cdp.load_timeout", "url", pageURL, "wait", loadWait.String())
 	}
 
 	if opts.BlockAds {
@@ -626,6 +642,7 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		return nil, fmt.Errorf("抽出コンテンツ解析失敗: %w", err)
 	}
 	content.FetchedAt = time.Now().UTC()
+	content.LoadTimeout = loadTimedOut
 	if opts.Screenshot != nil && !isChromeErrorPage(content.FinalURL) {
 		shots, err := captureScreenshots(cctx, cli, sid, *opts.Screenshot)
 		if err != nil {

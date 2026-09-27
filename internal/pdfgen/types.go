@@ -24,6 +24,8 @@ type PageContent struct {
 	Article     string    `json:"article"` // ナビ・ヘッダー・フッター・広告等を除去したメイン本文
 	Text        string    `json:"text"`    // ページ全体の innerText
 	FetchedAt   time.Time `json:"fetched_at"`
+	// LoadTimeout は load イベントが待ち時間内に来ず、読み込み途中の状態で抽出したことを示す
+	LoadTimeout bool `json:"load_timeout,omitempty"`
 
 	// Screenshots は GenerateOptions.Screenshot 指定時のみ設定される（JSON出力には含めない）
 	Screenshots *Screenshots `json:"-"`
@@ -56,6 +58,8 @@ type GenerateOptions struct {
 	ExtraArgs []string
 	// BlockAds は広告ドメインへの通信を止め、残った広告枠をCSSで隠すか
 	BlockAds bool
+	// LoadWaitSec は load イベントを待つ上限秒数 (0=15秒)。超えたらその時点の状態で処理を続ける
+	LoadWaitSec int
 	// Screenshot が非nilなら、Format とは別にスクリーンショットを撮り PageContent.Screenshots に入れる
 	Screenshot *ScreenshotOptions
 }

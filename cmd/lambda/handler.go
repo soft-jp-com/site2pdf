@@ -64,6 +64,7 @@ type response struct {
 	Screenshots          []screenshotJSON    `json:"screenshots,omitempty"`
 	ScreenshotsTruncated bool                `json:"screenshots_truncated,omitempty"` // 枚数上限・応答サイズ上限で下の方を省いた
 	PageHeight           int                 `json:"page_height,omitempty"`
+	LoadTimeout          bool                `json:"load_timeout,omitempty"` // load イベントを待ちきれず、読み込み途中の状態で取得した
 	ElapsedMs            int64               `json:"elapsed_ms"`
 	MemoryPeakMB         float64             `json:"memory_peak_mb,omitempty"` // 実行環境全体の最大メモリ（cgroup v2 で読める場合のみ）
 }
@@ -194,7 +195,7 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 		return nil, fmt.Errorf("ページ処理失敗(%s): %w", req.URL, err)
 	}
 
-	res := &response{URL: req.URL, Outputs: req.Outputs}
+	res := &response{URL: req.URL, Outputs: req.Outputs, LoadTimeout: content.LoadTimeout}
 	if req.wants(outputJSON) {
 		res.Content = content
 	}
