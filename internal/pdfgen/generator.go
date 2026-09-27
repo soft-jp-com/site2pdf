@@ -94,7 +94,8 @@ func ProcessPageHeadless(ctx context.Context, pageURL, outputPath string, opts G
 	}
 
 	// テキスト/JSON抽出のみの場合は画像読み込みを無効化して通信量・レンダリング時間を劇的に短縮
-	if opts.Format == FormatJSON || opts.Format == FormatText {
+	// （スクリーンショットを撮る場合は画像が要るので無効化しない）
+	if (opts.Format == FormatJSON || opts.Format == FormatText) && opts.Screenshot == nil {
 		args = append(args, "--blink-settings=imagesEnabled=false")
 	}
 

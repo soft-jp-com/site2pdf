@@ -15,12 +15,15 @@ AWS へのデプロイ手順はまだ無い。ここでは手元の Docker と R
 ## イベントと応答
 
 ```json
-{"url": "https://www.nta.go.jp/", "format": "json", "timeout_sec": 30}
+{"url": "https://www.nta.go.jp/", "outputs": ["json", "screenshot"], "block_ads": true, "timeout_sec": 30}
 ```
 
-- `format`: `json`（既定）/ `pdf` / `all`（`pdf` と `all` は JSON に加えて PDF を返す）
-- 応答: `content`（タイトル・本文など）, `pdf_base64`, `pdf_bytes`, `elapsed_ms`, `memory_peak_mb`（cgroup v2 の memory.peak が読める場合のみ）
-- 応答全体（PDF の base64 と本文の JSON を合わせたもの）が 6MB（同期呼び出しの上限）を超えるとエラーを返す。大きい PDF は S3 に置く形が今後の課題。
+- `outputs`: 取得するものを組み合わせて指定する。`json`（タイトル・本文など）/ `pdf` / `screenshot`
+  - `screenshot` は幅1280px・高さ1600pxごとに分割した JPEG（画質70、最大6枚）。画像を読む AI が縦長画像を縮小して文字がつぶれるのを避けるため。
+  - 省略時は互換用の `format`（`json`（既定）/ `pdf` / `all`）から決める。`pdf` と `all` は本文も返す。`outputs` と `format` は同時に指定できない。
+- `block_ads`: 広告配信ドメインへの通信を止め、残った広告枠を隠す（既定 true）。
+- 応答: `outputs`, `content`, `pdf_base64`, `pdf_bytes`, `screenshots`（`y`, `height`, `bytes`, `jpeg_base64` の配列）, `screenshots_truncated`, `page_height`, `elapsed_ms`, `memory_peak_mb`
+- 応答全体が 6MB（同期呼び出しの上限）を超える場合、スクリーンショットは下から省いて `screenshots_truncated: true` を付ける。PDF で超える場合はエラーを返す。大きい結果は S3 に置く形が今後の課題。
 
 ## 環境変数
 

@@ -17,38 +17,74 @@ import (
 )
 
 // maxResponseBytes は同期呼び出しの応答サイズ上限（6MB）。
-// PDF(base64)と本文を合わせた応答全体で判定する。超える場合は将来 S3 に置いてURLを返す形にする。
+// PDF・スクリーンショット(base64)と本文を合わせた応答全体で判定する。超える場合は将来 S3 に置いてURLを返す形にする。
 const maxResponseBytes = 6 * 1024 * 1024
+
+// 取得できる出力の種類（outputs に指定する値）。markdown, html は今後追加する。
+const (
+	outputJSON       = "json"
+	outputPDF        = "pdf"
+	outputScreenshot = "screenshot"
+)
 
 // request は Lambda に渡すイベントの形式。
 type request struct {
-	URL        string `json:"url"`
-	Format     string `json:"format"`      // json（既定）, pdf, all
-	TimeoutSec int    `json:"timeout_sec"` // ページ読み込みタイムアウト（0=環境変数の既定値）
-	BlockAds   *bool  `json:"block_ads"`   // 広告を除くか（省略時=true）
+	URL        string   `json:"url"`
+	Outputs    []string `json:"outputs"`     // 取得するもの: json, pdf, screenshot（省略時は format から決める）
+	Format     string   `json:"format"`      // 互換用: json（既定）, pdf, all。outputs と同時には指定できない
+	TimeoutSec int      `json:"timeout_sec"` // ページ読み込みタイムアウト（0=環境変数の既定値）
+	BlockAds   *bool    `json:"block_ads"`   // 広告を除くか（省略時=true）
+}
+
+// wants は outputs に name が含まれるかを返す。
+func (r request) wants(name string) bool {
+	for _, o := range r.Outputs {
+		if o == name {
+			return true
+		}
+	}
+	return false
+}
+
+// screenshotJSON は応答に入れるスクリーンショット1枚。
+type screenshotJSON struct {
+	Y          int    `json:"y"`
+	Height     int    `json:"height"`
+	Bytes      int    `json:"bytes"`
+	JPEGBase64 string `json:"jpeg_base64"`
 }
 
 // response は Lambda が返す結果の形式。
 type response struct {
-	URL          string              `json:"url"`
-	Format       string              `json:"format"`
-	Content      *pdfgen.PageContent `json:"content"`
-	PDFBase64    string              `json:"pdf_base64,omitempty"`
-	PDFBytes     int                 `json:"pdf_bytes,omitempty"`
-	ElapsedMs    int64               `json:"elapsed_ms"`
-	MemoryPeakMB float64             `json:"memory_peak_mb,omitempty"` // 実行環境全体の最大メモリ（cgroup v2 で読める場合のみ）
+	URL                  string              `json:"url"`
+	Outputs              []string            `json:"outputs"`
+	Content              *pdfgen.PageContent `json:"content,omitempty"`
+	PDFBase64            string              `json:"pdf_base64,omitempty"`
+	PDFBytes             int                 `json:"pdf_bytes,omitempty"`
+	Screenshots          []screenshotJSON    `json:"screenshots,omitempty"`
+	ScreenshotsTruncated bool                `json:"screenshots_truncated,omitempty"` // 枚数上限・応答サイズ上限で下の方を省いた
+	PageHeight           int                 `json:"page_height,omitempty"`
+	ElapsedMs            int64               `json:"elapsed_ms"`
+	MemoryPeakMB         float64             `json:"memory_peak_mb,omitempty"` // 実行環境全体の最大メモリ（cgroup v2 で読める場合のみ）
 }
 
 // encodeResponse は応答をJSONにし、同期呼び出しの上限を超えていないか確かめる。
+// 上限を超える場合はスクリーンショットを下から1枚ずつ省いて収める（screenshots_truncated を付ける）。
 func encodeResponse(res *response) ([]byte, error) {
-	body, err := json.Marshal(res)
-	if err != nil {
-		return nil, fmt.Errorf("応答のJSON化: %w", err)
+	for {
+		body, err := json.Marshal(res)
+		if err != nil {
+			return nil, fmt.Errorf("応答のJSON化: %w", err)
+		}
+		if len(body) <= maxResponseBytes {
+			return body, nil
+		}
+		if len(res.Screenshots) == 0 {
+			return nil, fmt.Errorf("応答が大きすぎて同期応答に収まりません(%d bytes > %d, pdf %d bytes)", len(body), maxResponseBytes, res.PDFBytes)
+		}
+		res.Screenshots = res.Screenshots[:len(res.Screenshots)-1]
+		res.ScreenshotsTruncated = true
 	}
-	if len(body) > maxResponseBytes {
-		return nil, fmt.Errorf("応答が大きすぎて同期応答に収まりません(%d bytes > %d, pdf %d bytes)", len(body), maxResponseBytes, res.PDFBytes)
-	}
-	return body, nil
 }
 
 // config は環境変数から読み込む実行時設定。
@@ -78,12 +114,34 @@ func parseRequest(payload []byte) (request, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return req, fmt.Errorf("url には http(s) の絶対URLを指定してください: %q", req.URL)
 	}
-	switch req.Format {
-	case "":
-		req.Format = string(pdfgen.FormatJSON)
-	case string(pdfgen.FormatJSON), string(pdfgen.FormatPDF), string(pdfgen.FormatAll):
-	default:
-		return req, fmt.Errorf("format は json, pdf, all のいずれかです: %q", req.Format)
+	if len(req.Outputs) > 0 {
+		if req.Format != "" {
+			return req, fmt.Errorf("outputs と format は同時に指定できません")
+		}
+		seen := map[string]bool{}
+		var outs []string
+		for _, o := range req.Outputs {
+			switch o {
+			case outputJSON, outputPDF, outputScreenshot:
+			default:
+				return req, fmt.Errorf("outputs には json, pdf, screenshot を指定してください: %q", o)
+			}
+			if !seen[o] {
+				seen[o] = true
+				outs = append(outs, o)
+			}
+		}
+		req.Outputs = outs
+	} else {
+		// 互換: format から outputs を決める（pdf/all は従来どおり本文も返す）
+		switch req.Format {
+		case "", string(pdfgen.FormatJSON):
+			req.Outputs = []string{outputJSON}
+		case string(pdfgen.FormatPDF), string(pdfgen.FormatAll):
+			req.Outputs = []string{outputJSON, outputPDF}
+		default:
+			return req, fmt.Errorf("format は json, pdf, all のいずれかです: %q", req.Format)
+		}
 	}
 	if req.TimeoutSec < 0 {
 		return req, fmt.Errorf("timeout_sec は0以上で指定してください: %d", req.TimeoutSec)
@@ -109,7 +167,7 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	opts := pdfgen.DefaultGenerateOptions()
-	opts.Format = pdfgen.OutputFormat(req.Format)
+	opts.Format = pdfgen.FormatJSON
 	opts.WorkDir = cfg.WorkDir
 	opts.ExtraArgs = cfg.ExtraArgs
 	opts.StartupTimeoutSec = cfg.StartupTimeoutSec
@@ -120,11 +178,14 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 	if req.BlockAds != nil {
 		opts.BlockAds = *req.BlockAds
 	}
-
-	// all の場合は拡張子が付け替えられるので、PDFのパスは out.pdf になる
-	outputPath := filepath.Join(dir, "out.pdf")
-	if req.Format == string(pdfgen.FormatJSON) {
-		outputPath = "" // JSON はファイルに書かず、戻り値の構造体をそのまま返す
+	outputPath := "" // JSON はファイルに書かず、戻り値の構造体をそのまま返す
+	if req.wants(outputPDF) {
+		opts.Format = pdfgen.FormatPDF
+		outputPath = filepath.Join(dir, "out.pdf")
+	}
+	if req.wants(outputScreenshot) {
+		so := pdfgen.DefaultScreenshotOptions()
+		opts.Screenshot = &so
 	}
 
 	start := time.Now()
@@ -133,13 +194,12 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 		return nil, fmt.Errorf("ページ処理失敗(%s): %w", req.URL, err)
 	}
 
-	res := &response{
-		URL:     req.URL,
-		Format:  req.Format,
-		Content: content,
+	res := &response{URL: req.URL, Outputs: req.Outputs}
+	if req.wants(outputJSON) {
+		res.Content = content
 	}
 
-	if req.Format != string(pdfgen.FormatJSON) {
+	if req.wants(outputPDF) {
 		raw, err := os.ReadFile(outputPath)
 		if err != nil {
 			return nil, fmt.Errorf("PDF読み込み: %w", err)
@@ -152,11 +212,22 @@ func handle(ctx context.Context, payload []byte, cfg config, logger *slog.Logger
 		res.PDFBase64 = base64.StdEncoding.EncodeToString(raw)
 	}
 
+	if shots := content.Screenshots; shots != nil {
+		res.PageHeight = shots.PageHeight
+		res.ScreenshotsTruncated = shots.Truncated
+		for _, t := range shots.Tiles {
+			res.Screenshots = append(res.Screenshots, screenshotJSON{
+				Y: t.Y, Height: t.Height, Bytes: len(t.JPEG),
+				JPEGBase64: base64.StdEncoding.EncodeToString(t.JPEG),
+			})
+		}
+	}
+
 	res.ElapsedMs = time.Since(start).Milliseconds()
 	reapZombies()
 	res.MemoryPeakMB = memoryPeakMB()
-	logger.Info("lambda.done", "url", req.URL, "format", req.Format, "elapsed_ms", res.ElapsedMs,
-		"pdf_bytes", res.PDFBytes, "memory_peak_mb", res.MemoryPeakMB)
+	logger.Info("lambda.done", "url", req.URL, "outputs", req.Outputs, "elapsed_ms", res.ElapsedMs,
+		"pdf_bytes", res.PDFBytes, "screenshots", len(res.Screenshots), "memory_peak_mb", res.MemoryPeakMB)
 	return res, nil
 }
 

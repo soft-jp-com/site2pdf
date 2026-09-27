@@ -24,6 +24,9 @@ type PageContent struct {
 	Article     string    `json:"article"` // ナビ・ヘッダー・フッター・広告等を除去したメイン本文
 	Text        string    `json:"text"`    // ページ全体の innerText
 	FetchedAt   time.Time `json:"fetched_at"`
+
+	// Screenshots は GenerateOptions.Screenshot 指定時のみ設定される（JSON出力には含めない）
+	Screenshots *Screenshots `json:"-"`
 }
 
 // GenerateOptions はPDF生成およびコンテンツ抽出の設定を保持する。
@@ -53,6 +56,8 @@ type GenerateOptions struct {
 	ExtraArgs []string
 	// BlockAds は広告ドメインへの通信を止め、残った広告枠をCSSで隠すか
 	BlockAds bool
+	// Screenshot が非nilなら、Format とは別にスクリーンショットを撮り PageContent.Screenshots に入れる
+	Screenshot *ScreenshotOptions
 }
 
 // DefaultGenerateOptions はデフォルト設定を返す。

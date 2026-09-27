@@ -552,6 +552,11 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 			logger.Warn("cdp.adblock_failed", "url", pageURL, "error", err.Error())
 		}
 	}
+	if opts.Screenshot != nil {
+		if err := setScreenshotViewport(cctx, cli, sid, *opts.Screenshot); err != nil {
+			return nil, fmt.Errorf("Emulation.setDeviceMetricsOverride: %w", err)
+		}
+	}
 	navRes, err := cli.send(cctx, "Page.navigate", map[string]any{"url": pageURL}, sid)
 	if err != nil {
 		return nil, fmt.Errorf("Page.navigate: %w", err)
@@ -578,8 +583,8 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		_, _ = cli.eval(cctx, sid, hideAdSlotsJS())
 	}
 
-	if needPDF {
-		// PDF生成時はCSS展開・スクロール展開・安定化待機を行う
+	if needPDF || opts.Screenshot != nil {
+		// PDF・スクリーンショット生成時はCSS展開・スクロール展開・安定化待機を行う
 		if err := waitCtx(cctx, settleAfterLoad); err != nil {
 			return nil, err
 		}
@@ -605,6 +610,13 @@ func ProcessPageViaCDP(ctx context.Context, port int, pageURL, outputPath string
 		return nil, fmt.Errorf("抽出コンテンツ解析失敗: %w", err)
 	}
 	content.FetchedAt = time.Now().UTC()
+	if opts.Screenshot != nil && !isChromeErrorPage(content.FinalURL) {
+		shots, err := captureScreenshots(cctx, cli, sid, *opts.Screenshot)
+		if err != nil {
+			return nil, err
+		}
+		content.Screenshots = shots
+	}
 	// 読み込み途中で失敗した場合もエラーページになるので、成功として返さない
 	if isChromeErrorPage(content.FinalURL) {
 		return nil, fmt.Errorf("ページを開けません(%s): エラーページが表示されました", pageURL)
