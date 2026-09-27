@@ -36,6 +36,14 @@ func main() {
 	cfg := loadConfig()
 	logger.Info("lambda.start", "chrome_path", os.Getenv("SITE2PDF_CHROME_PATH"), "extra_args", cfg.ExtraArgs)
 
+	// 初期化フェーズのうちに Chrome と共有ライブラリを読み込んでおき、コールドスタートを短くする
+	if list := os.Getenv("SITE2PDF_PREFETCH_LIST"); list != "" {
+		budget := time.Duration(envInt("SITE2PDF_PREFETCH_BUDGET_MS", 8000)) * time.Millisecond
+		r := prefetchFiles(list, budget, 8)
+		logger.Info("lambda.prefetch", "files", r.Files, "mb", r.Bytes/(1024*1024),
+			"elapsed_ms", r.Elapsed.Milliseconds(), "timed_out", r.TimedOut)
+	}
+
 	// 次のイベント待ちはロングポーリングになるためタイムアウトなし
 	client := &http.Client{}
 	base := "http://" + api + "/" + runtimeAPIVersion + "/runtime/invocation/"

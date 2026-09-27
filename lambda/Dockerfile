@@ -39,7 +39,15 @@ RUN dnf install -y \
 COPY --from=chrome /opt/chrome /opt/chrome
 
 # 足りない共有ライブラリがあればビルドを失敗させる（ldd 自体が無い場合も失敗させるため、いったんファイルに書き出す）
-RUN ldd /opt/chrome/chrome-headless-shell > /tmp/ldd.txt && ! grep -q "not found" /tmp/ldd.txt && rm /tmp/ldd.txt
+RUN ldd /opt/chrome/chrome-headless-shell > /tmp/ldd.txt && ! grep -q "not found" /tmp/ldd.txt \
+    && { echo /opt/chrome; \
+         awk '$2 == "=>" && $3 ~ /^\// {print $3}' /tmp/ldd.txt; \
+         echo /usr/lib/fontconfig/cache; \
+         ls /usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc /usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc 2>/dev/null; \
+       } > /opt/prefetch.list \
+    && rm /tmp/ldd.txt
+# ↑ /opt/prefetch.list は初期化フェーズで先読みするファイルの一覧（Chrome 本体→共有ライブラリ→フォントの順）。
+#   Lambda はイメージを必要な部分から読み込むため、コールドスタートで Chrome の起動に40秒かかっていた。
 
 COPY --from=build /out/bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
 
@@ -52,6 +60,8 @@ ENV SITE2PDF_CHROME_PATH=/opt/chrome/chrome-headless-shell \
     FONTCONFIG_PATH=/etc/fonts \
     SITE2PDF_CHROME_ARGS="--no-zygote --disable-software-rasterizer" \
     SITE2PDF_STARTUP_TIMEOUT_SEC=20 \
-    SITE2PDF_TIMEOUT_SEC=45
+    SITE2PDF_TIMEOUT_SEC=45 \
+    SITE2PDF_PREFETCH_LIST=/opt/prefetch.list \
+    SITE2PDF_PREFETCH_BUDGET_MS=8000
 
 CMD ["bootstrap"]
