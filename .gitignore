@@ -1,0 +1,17 @@
+# Binaries
+/dist/*.exe
+/dist/site2pdf.exe
+*.exe
+
+# Generated Outputs
+/output/
+/dist/files/
+/dist/test_*
+
+# Logs and temp files
+*.log
+*.tmp
+.DS_Store
+
+# Local settings
+.claude/
