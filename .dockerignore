@@ -1,0 +1,6 @@
+dist
+docs
+.git
+.claude
+*.exe
+site2pdf.json
